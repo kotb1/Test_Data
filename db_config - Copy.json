@@ -1,0 +1,12 @@
+{
+  "app_ip": "10.19.135.135",
+  "app_port": 8003,
+  "number_of_orders": 12,
+
+  "jdbc": "jdbc:oracle:thin",
+  "ip": "10.19.135.182",
+  "port": 1521,
+  "service_name": "wfmprod",
+  "user": "MTS_WFM_2017",
+  "password": "TEX42w$zascWFMGl_e54sj87nDFSG"
+}

@@ -1,0 +1,45 @@
+{
+  "app_ip": "10.19.35.91",
+  "app_port": 8003,
+  "number_of_orders": 285,
+
+  "jdbc": "jdbc:oracle:thin",
+  "ip": "10.19.35.91",
+  "port": 1521,
+  "service_name": "wmfdbdev",
+  "user": "mts_wfm_2017",
+  "password": "mts2017A"
+}
+
+
+{
+  "app_ip": "10.19.135.135",
+  "app_port": 8003,
+  "number_of_orders": 12,
+
+  "jdbc": "jdbc:oracle:thin",
+  "ip": "10.19.135.182",
+  "port": 1521,
+  "service_name": "wfmprod",
+  "user": "MTS_WFM_2017",
+  "password": "TEX42w$zascWFMGl_e54sj87nDFSG"
+}
+
+
+{
+  "app_ip": "10.1.1.80",
+  "app_port": 7003,
+  "number_of_orders": 285,
+
+  "jdbc": "jdbc:oracle:thin",
+  "ip": "10.1.1.85",
+  "port": 1521,
+  "service_name": "wfm",
+  "user": "MTS_WFM_2017",
+  "password": "mts2017A"
+}
+
+
+
+
+
