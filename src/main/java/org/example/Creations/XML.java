@@ -26,157 +26,175 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Random;
 
+/**
+ * Wraps one request template (an XML / SOAP body) for a single work order type.
+ * <p>
+ * Each call to {@link #randomize_OM_Order_ID()} or {@link #update_complain_number()}
+ * puts a new random ID into the template so every request sent is unique.
+ * The send_* methods post the body to the server and return the created work order number.
+ */
 public class XML
 {
-    protected Document xml_document;
+    private static final Random RANDOM = new Random();
 
-    public XML(String xml2) throws ParserConfigurationException, IOException, SAXException, XPathExpressionException, TransformerException
+    /** The parsed request template. It is modified in place every time an ID is randomized. */
+    protected Document xml_document;
+    public String Request_type;
+
+
+    public String get_request_type(){ return this.Request_type;}
+    public XML(String xml2, String request_type) throws ParserConfigurationException, IOException, SAXException, XPathExpressionException, TransformerException
     {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         DocumentBuilder builder = factory.newDocumentBuilder();
-        String xml = xml2.toString().replace("\uFEFF", "").trim();
-        Document doc = builder.parse(new InputSource(new StringReader(xml.trim())));
-        this.xml_document= doc;
+        // Remove a BOM (byte order mark) if the template was copied from a file that had one
+        String xml = xml2.replace("﻿", "").trim();
+        this.xml_document = builder.parse(new InputSource(new StringReader(xml)));
+        this.Request_type = request_type;
     }
-    public String get_value_by_attribute(String attribute) throws XPathExpressionException {
-        try
-        {
-            Node attribute_Node = this.xml_document.getElementsByTagName(attribute).item(0);
-            String value = attribute_Node.getTextContent();
-            return value;
-        }catch(Exception e1)
-        {
-            XPath xPath = XPathFactory.newInstance().newXPath();
-            String expression = String.format("//addList[attCode='%s']/attValue", attribute);
-            Node valueNode = (Node) xPath.evaluate(expression, this.xml_document, XPathConstants.NODE);
-            return valueNode.getTextContent();
-        }
-    }
-    public String randomize_OM_Order_ID() throws TransformerException {
-        Node omOrderIDNode = this.xml_document.getElementsByTagName("OMOrderID").item(0);
-        Random random = new Random();
-        long randomNumber = 1_000_000_000L + (long)(random.nextDouble() * 9_000_000_000L);
-        String randomNumberString = String.valueOf(randomNumber);
-        omOrderIDNode.setTextContent(randomNumberString);
-        TransformerFactory transformerFactory = TransformerFactory.newInstance();
-        Transformer transformer = transformerFactory.newTransformer();
-        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-        StringWriter writer = new StringWriter();
-        transformer.transform(new DOMSource(this.xml_document), new StreamResult(writer));
-        String updatedXML = writer.getBuffer().toString();
-        return updatedXML;
-    }
-    public String update_complain_number() throws TransformerException {
-        Node omOrderIDNode = this.xml_document.getElementsByTagName("complainNo").item(0);
-        Random random = new Random();
-        long randomNumber = 1_000_000_000L + (long)(random.nextDouble() * 9_000_000_000L);
-        String randomNumberString = String.valueOf(randomNumber);
-        omOrderIDNode.setTextContent(randomNumberString);
-        TransformerFactory transformerFactory = TransformerFactory.newInstance();
-        Transformer transformer = transformerFactory.newTransformer();
-        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-        StringWriter writer = new StringWriter();
-        transformer.transform(new DOMSource(this.xml_document), new StreamResult(writer));
-        String updatedXML = writer.getBuffer().toString();
-        return updatedXML;
-    }
-    public String send_creation_request_installation(String request_body, String URL) throws IOException {
-        URL url = new URL(URL);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
+    /**
+     * Returns the text of the first tag with the given name.
+     * If there is no such tag, looks it up as an attCode inside an addList entry instead.
+     */
+    public String get_value_by_attribute(String attribute) throws XPathExpressionException {
+        Node attribute_Node = this.xml_document.getElementsByTagName(attribute).item(0);
+        if (attribute_Node != null)
+        {
+            return attribute_Node.getTextContent();
+        }
+        XPath xPath = XPathFactory.newInstance().newXPath();
+        String expression = String.format("//addList[attCode='%s']/attValue", attribute);
+        Node valueNode = (Node) xPath.evaluate(expression, this.xml_document, XPathConstants.NODE);
+        return valueNode == null ? null : valueNode.getTextContent();
+    }
+
+    /** Sets a new random OMOrderID (used by installation orders) and returns the updated XML. */
+    public String randomize_OM_Order_ID() throws TransformerException {
+        return randomize_tag("OMOrderID");
+    }
+
+    /** Sets a new random complainNo (used by maintenance orders) and returns the updated XML. */
+    public String update_complain_number() throws TransformerException {
+        return randomize_tag("complainNo");
+    }
+
+    /** Puts a random 10-digit number into the first tag with the given name and returns the updated XML. */
+    private String randomize_tag(String tag) throws TransformerException {
+        Node node = this.xml_document.getElementsByTagName(tag).item(0);
+        if (node == null)
+        {
+            throw new IllegalStateException("Template has no <" + tag + "> tag");
+        }
+        node.setTextContent(String.valueOf(random_10_digit_number()));
+        return to_xml_string();
+    }
+
+    /** Returns a random number between 1,000,000,000 and 9,999,999,999. */
+    static long random_10_digit_number() {
+        return 1_000_000_000L + (long) (RANDOM.nextDouble() * 9_000_000_000L);
+    }
+
+    /** Converts the current document back to an XML string. */
+    public String to_xml_string() throws TransformerException {
+        Transformer transformer = TransformerFactory.newInstance().newTransformer();
+        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        StringWriter writer = new StringWriter();
+        transformer.transform(new DOMSource(this.xml_document), new StreamResult(writer));
+        return writer.toString();
+    }
+
+    /**
+     * Sends an installation order (REST, XML body) and returns the work order number.
+     *
+     * @throws IOException if the request fails or the server does not answer with state "Ok"
+     */
+    public String send_creation_request_installation(String request_body, String URL) throws IOException {
+        String response = post(request_body, URL, "application/xml");
+        String workOrderNo = parse_installation_response(response);
+        System.out.println("Work Order Number: " + workOrderNo);
+        return workOrderNo;
+    }
+
+    /**
+     * Sends a maintenance order (SOAP) and returns the work order number,
+     * or null if the response has no Result tag.
+     */
+    public String send_creation_request_Maintenance(String request_body, String URL) throws Exception {
+        String responseXml = post(request_body, URL, "text/xml; charset=utf-8");
+        String workOrderNo = parseSoapResponse(responseXml);
+        System.out.println("Work Order Number: " + workOrderNo);
+        return workOrderNo;
+    }
+
+    /**
+     * Posts the body to the URL and returns the response text.
+     *
+     * @throws IOException if the server answers with an HTTP status of 400 or higher
+     */
+    static String post(String request_body, String URL, String content_type) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) new URL(URL).openConnection();
+        conn.setConnectTimeout(30_000);   // give up if the server cannot be reached in 30s
+        conn.setReadTimeout(120_000);     // give up if the server does not answer in 2 minutes
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
-        conn.setRequestProperty("Content-Type", "application/xml");
+        conn.setRequestProperty("Content-Type", content_type);
 
-        try (DataOutputStream dos = new DataOutputStream(conn.getOutputStream())) {
-            dos.write(request_body.getBytes(StandardCharsets.UTF_8));
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(request_body.getBytes(StandardCharsets.UTF_8));
         }
 
         int statusCode = conn.getResponseCode();
-
-        InputStream responseStream = statusCode >= 400
-                ? conn.getErrorStream()
-                : conn.getInputStream();
-
+        // Error responses are read from a different stream than successful ones
+        InputStream responseStream = statusCode >= 400 ? conn.getErrorStream() : conn.getInputStream();
         if (responseStream == null) {
             throw new IOException("Empty response. HTTP status: " + statusCode);
         }
 
         StringBuilder responseBuilder = new StringBuilder();
-
-        try (BufferedReader bf = new BufferedReader(
-                new InputStreamReader(responseStream, StandardCharsets.UTF_8))) {
-            String responseLine;
-            while ((responseLine = bf.readLine()) != null) {
-                responseBuilder.append(responseLine);
+        try (BufferedReader bf = new BufferedReader(new InputStreamReader(responseStream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = bf.readLine()) != null) {
+                responseBuilder.append(line);
             }
         }
-
         String response = responseBuilder.toString();
-        //System.out.println("HTTP Status: " + statusCode);
-        //System.out.println("Response: " + response);
 
         if (statusCode >= 400) {
-            throw new IOException("Request failed: " + response);
+            throw new IOException("Request failed (HTTP " + statusCode + "): " + response);
         }
+        return response;
+    }
 
+    /**
+     * Reads the work order number from an installation JSON response,
+     * for example {"state":"Ok","workOrderNo":"123"}.
+     *
+     * @throws IOException if state is not "Ok"
+     */
+    public static String parse_installation_response(String response) throws IOException {
         JSONObject json = new JSONObject(response);
-
         if (!"Ok".equals(json.optString("state"))) {
             throw new IOException("Order creation failed: " + response);
         }
-
-        String workOrderNo = json.getString("workOrderNo");
-        System.out.println("Work Order Number: " + workOrderNo);
-
-        return workOrderNo;
+        return json.getString("workOrderNo");
     }
-    public String send_creation_request_Maintenance(String request_body, String URL) throws Exception {
-        // SOAP endpoint URL
-        URL url = new URL(URL);
-        //System.out.println(request_body);
-        //System.out.println(URL);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setDoOutput(true);
 
-        // SOAP requires XML
-        conn.setRequestProperty("Content-Type", "text/xml; charset=utf-8");
-
-        // Send SOAP Request Body
-        try (DataOutputStream dos = new DataOutputStream(conn.getOutputStream())) {
-            dos.writeBytes(request_body);
-        }
-
-        // Read response (XML)
-        BufferedReader bf = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-        StringBuilder responseBuilder = new StringBuilder();
-        String line;
-        while ((line = bf.readLine()) != null) {
-            responseBuilder.append(line);
-        }
-        bf.close();
-
-        String responseXml = responseBuilder.toString();
-
-        // مثال: لو الـ response فيه <workOrderNo>12345</workOrderNo>
-        String workOrderNo= parseSoapResponse(responseXml);
-        System.out.println(workOrderNo);
-        return workOrderNo;
-    }
+    /**
+     * Reads the work order number from a SOAP response.
+     * It is the text of the first Result tag, whatever its namespace.
+     * Returns null if there is no Result tag.
+     */
     public String parseSoapResponse(String responseXml) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(true); // مهم عشان فيه namespaces
+        factory.setNamespaceAware(true); // needed because SOAP responses use namespaces
         DocumentBuilder builder = factory.newDocumentBuilder();
-        InputSource is = new InputSource(new StringReader(responseXml));
-        Document doc = builder.parse(is);
+        Document doc = builder.parse(new InputSource(new StringReader(responseXml)));
 
-        // هنجيب الـ "Result" من أي namespace
         NodeList resultNodes = doc.getElementsByTagNameNS("*", "Result");
         if (resultNodes.getLength() > 0) {
             return resultNodes.item(0).getTextContent();
-        } else {
-            return null; // لو مفيش Result
         }
+        return null;
     }
 }
