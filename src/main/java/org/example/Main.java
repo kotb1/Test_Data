@@ -42,7 +42,7 @@ public class Main {
             return;
         }
 
-        // Stops here, before anything is sent, if a user in Export.USERS has no user ID
+        // Stops here, before anything is sent, if a user in users.xlsx has no user ID
         Export.check_user_ids();
 
         System.out.println("Sending " + numberOfOrders + " orders to " + ip + ":" + port);

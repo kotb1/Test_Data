@@ -19,6 +19,12 @@
         <artifactId>json</artifactId>
         <version>20250107</version>
     </dependency>
+    <!-- Apache POI, used by Export.java to read the users from users.xlsx -->
+    <dependency>
+        <groupId>org.apache.poi</groupId>
+        <artifactId>poi-ooxml</artifactId>
+        <version>5.2.5</version>
+    </dependency>
     <!-- Oracle JDBC driver, used by Database.java -->
     <dependency>
         <groupId>com.oracle.database.jdbc</groupId>
